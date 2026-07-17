@@ -225,6 +225,30 @@
   }
 
   /* Ledger / log list */
+  .stats-box{
+    display:flex;
+    border: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  .stat{
+    flex:1;
+    text-align:center;
+    padding: 14px 6px;
+  }
+  .stat + .stat{ border-left: 1px solid var(--line); }
+  .stat-label{
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  .stat-val{
+    font-size: 17px;
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+  }
+
   .ledger-head{
     display:flex;
     justify-content:space-between;
@@ -358,6 +382,21 @@
     </div>
   </div>
 
+  <div class="stats-box" id="statsBox">
+    <div class="stat">
+      <div class="stat-label">This week</div>
+      <div class="stat-val" id="statWeekTotal">0h 00m</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Daily avg (7d)</div>
+      <div class="stat-val" id="statDailyAvg">0h 00m</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Active days</div>
+      <div class="stat-val" id="statActiveDays">0 / 7</div>
+    </div>
+  </div>
+
   <div class="ledger-head">
     <h2>Today's Log</h2>
     <div class="total" id="dayTotal">0h 00m</div>
@@ -371,7 +410,7 @@
     <input type="file" id="importFile" accept="application/json" style="display:none;">
   </div>
 
-  <footer>ENTRIES ARE SAVED PRIVATELY IN THIS BROWSER ON THIS DEVICE — USE EXPORT TO BACK UP OR MOVE THEM</footer>
+  <footer>ENTRIES SYNC PRIVATELY TO YOUR CLAUDE ACCOUNT — USE EXPORT TO BACK UP OR MOVE THEM</footer>
 </div>
 
 <script>
@@ -482,7 +521,8 @@
     }
     running = true;
     startTimestamp = Date.now();
-    interval = setInterval(tick, 250);
+    interval = setInterval(tick, 1000);
+    tick();
     digits.classList.add('running');
     digits.classList.remove('overdue');
     displayWrap.dataset.status = 'Running';
@@ -492,6 +532,7 @@
     modeStopwatch.disabled = true;
     modeCountdown.disabled = true;
     setH.disabled = setM.disabled = setS.disabled = true;
+    saveSession();
   });
 
   pauseBtn.addEventListener('click', ()=>{
@@ -503,6 +544,7 @@
     startBtn.disabled = false;
     startBtn.textContent = 'Resume';
     pauseBtn.disabled = true;
+    saveSession();
   });
 
   stopBtn.addEventListener('click', ()=>{
@@ -519,6 +561,8 @@
     }
     running = false;
     if(pendingSeconds > 0){
+      elapsedBeforePause = pendingSeconds * 1000;
+      saveSession();
       logEntry.classList.add('show');
       taskInput.value = '';
       taskInput.focus();
@@ -543,7 +587,68 @@
     setH.disabled = setM.disabled = setS.disabled = false;
     logEntry.classList.remove('show');
     resetDisplay();
+    clearSession();
   }
+
+  // --- Session persistence: survives closing the browser / tab ---
+  async function saveSession(){
+    try{
+      await window.storage.set('worklog:session', JSON.stringify({
+        mode, running, startTimestamp, elapsedBeforePause, countdownTotalMs
+      }));
+    }catch(e){}
+  }
+  async function clearSession(){
+    try{ await window.storage.delete('worklog:session'); }catch(e){}
+  }
+  async function restoreSession(){
+    let saved;
+    try{
+      const res = await window.storage.get('worklog:session');
+      saved = res && res.value ? JSON.parse(res.value) : null;
+    }catch(e){ saved = null; }
+    if(!saved) return;
+
+    mode = saved.mode;
+    setMode(mode); // safe since running is currently false
+    countdownTotalMs = saved.countdownTotalMs || 0;
+    elapsedBeforePause = saved.elapsedBeforePause || 0;
+    startTimestamp = saved.startTimestamp;
+
+    if(saved.running){
+      // Recompute how much time actually passed while the page was closed
+      running = true;
+      interval = setInterval(tick, 1000);
+      tick();
+      digits.classList.add('running');
+      displayWrap.dataset.status = 'Running';
+      startBtn.disabled = true;
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      modeStopwatch.disabled = true;
+      modeCountdown.disabled = true;
+      setH.disabled = setM.disabled = setS.disabled = true;
+    } else if(elapsedBeforePause > 0){
+      // was paused
+      running = false;
+      const elapsed = elapsedBeforePause;
+      digits.textContent = mode==='stopwatch' ? fmt(elapsed) : fmt(Math.max(0, countdownTotalMs - elapsed));
+      displayWrap.dataset.status = 'Paused';
+      startBtn.textContent = 'Resume';
+      pauseBtn.disabled = true;
+      stopBtn.disabled = false;
+      modeStopwatch.disabled = true;
+      modeCountdown.disabled = true;
+      setH.disabled = setM.disabled = setS.disabled = true;
+    }
+  }
+
+  // If the tab was backgrounded/locked, recompute instantly when it becomes visible again
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && running){
+      tick();
+    }
+  });
 
   discardBtn.addEventListener('click', hardReset);
 
@@ -559,6 +664,7 @@
     entries.unshift(entry);
     await persist();
     renderLog();
+    renderStats();
     hardReset();
   });
 
@@ -568,15 +674,15 @@
 
   async function persist(){
     try{
-      localStorage.setItem('worklog:entries', JSON.stringify(entries));
+      await window.storage.set('worklog:entries', JSON.stringify(entries));
     }catch(e){ console.error('save failed', e); }
   }
 
   async function loadEntries(){
     try{
-      const raw = localStorage.getItem('worklog:entries');
-      if(raw){
-        entries = JSON.parse(raw);
+      const res = await window.storage.get('worklog:entries');
+      if(res && res.value){
+        entries = JSON.parse(res.value);
       }
     }catch(e){
       entries = [];
@@ -587,6 +693,20 @@
   function isToday(ts){
     const d = new Date(ts), now = new Date();
     return d.toDateString() === now.toDateString();
+  }
+
+  function renderStats(){
+    const now = Date.now();
+    const weekMs = 7*24*3600*1000;
+    const cutoff = now - weekMs;
+    const recent = entries.filter(e => e.timestamp >= cutoff);
+    const weekTotalSec = recent.reduce((a,e)=>a+e.seconds,0);
+    const dailyAvgSec = Math.round(weekTotalSec / 7);
+    const activeDays = new Set(recent.map(e => new Date(e.timestamp).toDateString())).size;
+
+    document.getElementById('statWeekTotal').textContent = fmtHuman(weekTotalSec);
+    document.getElementById('statDailyAvg').textContent = fmtHuman(dailyAvgSec);
+    document.getElementById('statActiveDays').textContent = `${activeDays} / 7`;
   }
 
   function renderLog(){
@@ -612,6 +732,7 @@
     }
     const totalSec = todays.reduce((a,e)=>a+e.seconds,0);
     dayTotal.textContent = fmtHuman(totalSec);
+    renderStats();
 
     document.querySelectorAll('.del').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
@@ -693,6 +814,7 @@
 
   resetDisplay();
   loadEntries();
+  restoreSession();
 })();
 </script>
 </body>
