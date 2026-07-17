@@ -249,6 +249,48 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .manual-add-btn{
+    display:block;
+    width:100%;
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 0;
+    margin-bottom: 14px;
+    cursor:pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .manual-add-btn:hover{ border-color: var(--brass); color: var(--brass); }
+
+  .manual-grid{
+    display:flex;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .manual-grid label{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap: 5px;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .manual-grid input{
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 9px 6px;
+  }
+  .manual-grid input:focus{ outline: 1px solid var(--brass); }
+
   .ledger-head{
     display:flex;
     justify-content:space-between;
@@ -402,6 +444,25 @@
     <div class="total" id="dayTotal">0h 00m</div>
   </div>
 
+  <button id="addManualBtn" class="manual-add-btn">+ Add a past entry</button>
+
+  <div class="log-entry" id="manualEntry">
+    <div class="label">Add entry manually</div>
+    <input type="text" id="manualTask" placeholder="What did you work on?" maxlength="120">
+    <div class="manual-grid">
+      <label>Date<input type="date" id="manualDate"></label>
+      <label>Time<input type="time" id="manualTime"></label>
+    </div>
+    <div class="manual-grid">
+      <label>Hours<input type="number" id="manualH" min="0" max="23" value="0"></label>
+      <label>Minutes<input type="number" id="manualM" min="0" max="59" value="30"></label>
+    </div>
+    <div class="row">
+      <button id="manualCancelBtn">Cancel</button>
+      <button id="manualSaveBtn" class="save">Add entry</button>
+    </div>
+  </div>
+
   <div id="logList"></div>
 
   <div class="io-row">
@@ -410,7 +471,7 @@
     <input type="file" id="importFile" accept="application/json" style="display:none;">
   </div>
 
-  <footer>ENTRIES SYNC PRIVATELY TO YOUR CLAUDE ACCOUNT — USE EXPORT TO BACK UP OR MOVE THEM</footer>
+  <footer>ENTRIES ARE SAVED PRIVATELY IN THIS BROWSER ON THIS DEVICE — USE EXPORT TO BACK UP OR MOVE THEM</footer>
 </div>
 
 <script>
@@ -591,22 +652,19 @@
   }
 
   // --- Session persistence: survives closing the browser / tab ---
-  async function saveSession(){
+  function saveSession(){
     try{
-      await window.storage.set('worklog:session', JSON.stringify({
+      localStorage.setItem('worklog:session', JSON.stringify({
         mode, running, startTimestamp, elapsedBeforePause, countdownTotalMs
       }));
     }catch(e){}
   }
-  async function clearSession(){
-    try{ await window.storage.delete('worklog:session'); }catch(e){}
+  function clearSession(){
+    try{ localStorage.removeItem('worklog:session'); }catch(e){}
   }
-  async function restoreSession(){
+  function restoreSession(){
     let saved;
-    try{
-      const res = await window.storage.get('worklog:session');
-      saved = res && res.value ? JSON.parse(res.value) : null;
-    }catch(e){ saved = null; }
+    try{ saved = JSON.parse(localStorage.getItem('worklog:session')); }catch(e){ saved = null; }
     if(!saved) return;
 
     mode = saved.mode;
@@ -674,15 +732,15 @@
 
   async function persist(){
     try{
-      await window.storage.set('worklog:entries', JSON.stringify(entries));
+      localStorage.setItem('worklog:entries', JSON.stringify(entries));
     }catch(e){ console.error('save failed', e); }
   }
 
   async function loadEntries(){
     try{
-      const res = await window.storage.get('worklog:entries');
-      if(res && res.value){
-        entries = JSON.parse(res.value);
+      const raw = localStorage.getItem('worklog:entries');
+      if(raw){
+        entries = JSON.parse(raw);
       }
     }catch(e){
       entries = [];
@@ -722,7 +780,7 @@
         row.innerHTML = `
           <div class="left">
             <div class="task">${escapeHtml(e.task)}</div>
-            <div class="meta">${time} · ${e.mode==='countdown'?'countdown':'stopwatch'}</div>
+            <div class="meta">${time} · ${e.mode==='countdown'?'countdown':(e.mode==='manual'?'added manually':'stopwatch')}</div>
           </div>
           <div class="dur">${fmtHuman(e.seconds)}</div>
           <button class="del" data-id="${e.id}" title="Delete">✕</button>
@@ -810,6 +868,63 @@
       importFile.value = '';
     };
     reader.readAsText(file);
+  });
+
+  // --- Manual "add a past entry" ---
+  const addManualBtn = document.getElementById('addManualBtn');
+  const manualEntry = document.getElementById('manualEntry');
+  const manualTask = document.getElementById('manualTask');
+  const manualDate = document.getElementById('manualDate');
+  const manualTime = document.getElementById('manualTime');
+  const manualH = document.getElementById('manualH');
+  const manualM = document.getElementById('manualM');
+  const manualCancelBtn = document.getElementById('manualCancelBtn');
+  const manualSaveBtn = document.getElementById('manualSaveBtn');
+
+  function fmtDateInput(d){
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+  }
+  function fmtTimeInput(d){
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  addManualBtn.addEventListener('click', ()=>{
+    const now = new Date();
+    manualTask.value = '';
+    manualDate.value = fmtDateInput(now);
+    manualTime.value = fmtTimeInput(now);
+    manualH.value = 0;
+    manualM.value = 30;
+    manualEntry.classList.add('show');
+    manualTask.focus();
+  });
+
+  manualCancelBtn.addEventListener('click', ()=>{
+    manualEntry.classList.remove('show');
+  });
+
+  manualSaveBtn.addEventListener('click', async ()=>{
+    const task = manualTask.value.trim() || 'Untitled session';
+    const hrs = parseInt(manualH.value) || 0;
+    const mins = parseInt(manualM.value) || 0;
+    const seconds = hrs*3600 + mins*60;
+    if(seconds <= 0){ alert('Enter a duration greater than 0.'); return; }
+    if(!manualDate.value || !manualTime.value){ alert('Pick a date and time.'); return; }
+
+    const timestamp = new Date(`${manualDate.value}T${manualTime.value}`).getTime();
+    if(isNaN(timestamp)){ alert('That date/time looks invalid.'); return; }
+
+    entries.push({
+      id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
+      task,
+      seconds,
+      mode: 'manual',
+      timestamp
+    });
+    entries.sort((a,b)=>b.timestamp - a.timestamp);
+    await persist();
+    renderLog();
+    manualEntry.classList.remove('show');
   });
 
   resetDisplay();
