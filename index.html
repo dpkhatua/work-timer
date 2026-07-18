@@ -227,14 +227,18 @@
   /* Ledger / log list */
   .stats-box{
     display:flex;
+    flex-wrap: wrap;
     border: 1px solid var(--line);
     margin-bottom: 22px;
   }
   .stat{
-    flex:1;
+    flex: 1 1 25%;
+    min-width: 90px;
     text-align:center;
     padding: 14px 6px;
+    border-bottom: 1px solid var(--line);
   }
+  .stat:nth-last-child(-n+2){ border-bottom: none; }
   .stat + .stat{ border-left: 1px solid var(--line); }
   .stat-label{
     font-size: 9px;
@@ -290,6 +294,57 @@
     padding: 9px 6px;
   }
   .manual-grid input:focus{ outline: 1px solid var(--brass); }
+
+  .day-browse{
+    border: 1px solid var(--line);
+    padding: 16px 16px 6px;
+    margin-bottom: 22px;
+    touch-action: pan-y;
+    user-select: none;
+  }
+  .day-browse-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom: 6px;
+  }
+  .day-arrow{
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 18px;
+    width: 34px;
+    height: 34px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .day-arrow:hover{ border-color: var(--brass); color: var(--brass); }
+  .day-arrow:disabled{ opacity: 0.3; cursor: default; }
+  .day-browse-date{
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    text-align: center;
+    flex: 1;
+  }
+  .day-browse-total{
+    text-align:center;
+    font-size: 24px;
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 10px;
+  }
+  .day-browse-hint{
+    text-align:center;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--line);
+    padding: 8px 0 4px;
+  }
 
   .ledger-head{
     display:flex;
@@ -464,6 +519,17 @@
   </div>
 
   <div id="logList"></div>
+
+  <div class="day-browse" id="dayBrowse">
+    <div class="day-browse-head">
+      <button id="dayPrev" class="day-arrow">‹</button>
+      <div class="day-browse-date" id="dayBrowseDate">Yesterday</div>
+      <button id="dayNext" class="day-arrow">›</button>
+    </div>
+    <div class="day-browse-total" id="dayBrowseTotal">0h 00m</div>
+    <div id="dayBrowseList"></div>
+    <div class="day-browse-hint">swipe or tap arrows to change day</div>
+  </div>
 
   <div class="io-row">
     <button id="exportBtn">Export log (.json)</button>
@@ -765,7 +831,85 @@
     document.getElementById('statWeekTotal').textContent = fmtHuman(weekTotalSec);
     document.getElementById('statDailyAvg').textContent = fmtHuman(dailyAvgSec);
     document.getElementById('statActiveDays').textContent = `${activeDays} / 7`;
+
+    renderDayBrowse();
   }
+
+  // --- Swipeable day browser: offset 0 = today, 1 = yesterday, 2 = two days ago, etc. ---
+  let dayOffset = 1; // default view: yesterday
+  const dayBrowseDate = document.getElementById('dayBrowseDate');
+  const dayBrowseTotal = document.getElementById('dayBrowseTotal');
+  const dayBrowseList = document.getElementById('dayBrowseList');
+  const dayPrevBtn = document.getElementById('dayPrev');
+  const dayNextBtn = document.getElementById('dayNext');
+  const dayBrowseEl = document.getElementById('dayBrowse');
+
+  function dayLabel(offset, dateObj){
+    if(offset === 0) return 'Today';
+    if(offset === 1) return 'Yesterday';
+    return dateObj.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+  }
+
+  function renderDayBrowse(){
+    const target = new Date();
+    target.setDate(target.getDate() - dayOffset);
+    const targetStr = target.toDateString();
+
+    dayBrowseDate.textContent = dayLabel(dayOffset, target);
+    dayNextBtn.disabled = (dayOffset <= 0);
+
+    const dayEntries = entries.filter(e => new Date(e.timestamp).toDateString() === targetStr)
+      .sort((a,b)=>a.timestamp - b.timestamp);
+    const totalSec = dayEntries.reduce((a,e)=>a+e.seconds,0);
+    dayBrowseTotal.textContent = fmtHuman(totalSec);
+
+    dayBrowseList.innerHTML = '';
+    if(dayEntries.length === 0){
+      dayBrowseList.innerHTML = '<div class="empty">Nothing logged this day.</div>';
+    } else {
+      dayEntries.forEach(e=>{
+        const row = document.createElement('div');
+        row.className = 'entry';
+        const time = new Date(e.timestamp).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+        row.innerHTML = `
+          <div class="left">
+            <div class="task">${escapeHtml(e.task)}</div>
+            <div class="meta">${time} · ${e.mode==='countdown'?'countdown':(e.mode==='manual'?'added manually':'stopwatch')}</div>
+          </div>
+          <div class="dur">${fmtHuman(e.seconds)}</div>
+        `;
+        dayBrowseList.appendChild(row);
+      });
+    }
+  }
+
+  dayPrevBtn.addEventListener('click', ()=>{
+    dayOffset += 1;
+    renderDayBrowse();
+  });
+  dayNextBtn.addEventListener('click', ()=>{
+    if(dayOffset > 0){
+      dayOffset -= 1;
+      renderDayBrowse();
+    }
+  });
+
+  // Swipe support
+  let touchStartX = null;
+  dayBrowseEl.addEventListener('touchstart', (e)=>{
+    touchStartX = e.changedTouches[0].clientX;
+  }, {passive:true});
+  dayBrowseEl.addEventListener('touchend', (e)=>{
+    if(touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const threshold = 40;
+    if(dx > threshold){
+      dayPrevBtn.click(); // swipe right → go back a day
+    } else if(dx < -threshold){
+      dayNextBtn.click(); // swipe left → go forward a day
+    }
+    touchStartX = null;
+  }, {passive:true});
 
   function renderLog(){
     logList.innerHTML = '';
