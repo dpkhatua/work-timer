@@ -433,6 +433,172 @@
   }
   .io-row button:hover{ border-color: var(--brass); color: var(--brass); }
 
+  /* Targets */
+  .section-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .section-head h2{
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    font-weight:normal;
+  }
+  .add-target-btn{
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    cursor:pointer;
+  }
+  .add-target-btn:hover{ border-color: var(--brass); color: var(--brass); }
+
+  .target-form{
+    display:none;
+    background: var(--paper-raised);
+    border: 1px solid var(--brass-dim);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .target-form.show{ display:block; }
+  .target-form input[type=text]{
+    width:100%;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .target-form-grid{
+    display:flex;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .target-form-grid label{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap: 5px;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .target-form-grid input{
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 9px 6px;
+  }
+  .target-form .row{ display:flex; gap:10px; }
+  .target-form .row button{
+    flex:1;
+    font-family:inherit;
+    font-size: 11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    padding: 10px 0;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor:pointer;
+  }
+  .target-form .row button.save{
+    background: var(--green);
+    border-color: var(--green);
+    color: #0f130e;
+    font-weight:bold;
+  }
+
+  .target-card{
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+  .target-card-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom: 8px;
+  }
+  .target-name{
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .target-nums{
+    font-size: 12px;
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+    white-space:nowrap;
+  }
+  .target-bar-track{
+    height: 8px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    margin-bottom: 6px;
+  }
+  .target-bar-fill{
+    height: 100%;
+    background: var(--brass);
+  }
+  .target-bar-fill.done{ background: var(--green); }
+  .target-bottom-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .target-pct{
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.05em;
+  }
+  .target-del{
+    background:none;
+    border:none;
+    color: var(--ink-dim);
+    font-size: 14px;
+    cursor:pointer;
+  }
+  .target-del:hover{ color: var(--red); }
+
+  /* Month / Year totals */
+  .period-box{
+    display:flex;
+    border: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  .period-stat{
+    flex:1;
+    text-align:center;
+    padding: 16px 6px;
+  }
+  .period-stat + .period-stat{ border-left: 1px solid var(--line); }
+  .period-stat-label{
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-bottom: 6px;
+  }
+  .period-stat-val{
+    font-size: 19px;
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+  }
+
   footer{
     margin-top: 22px;
     text-align:center;
@@ -520,6 +686,24 @@
 
   <div id="logList"></div>
 
+  <div class="section-head">
+    <h2>Targets</h2>
+    <button id="addTargetBtn" class="add-target-btn">+ New target</button>
+  </div>
+
+  <div class="target-form" id="targetForm">
+    <input type="text" id="targetName" placeholder="Work / project name (e.g. Client X)" maxlength="80">
+    <div class="target-form-grid">
+      <label>Target hours<input type="number" id="targetHours" min="0.5" step="0.5" value="10"></label>
+    </div>
+    <div class="row">
+      <button id="targetCancelBtn">Cancel</button>
+      <button id="targetSaveBtn" class="save">Add target</button>
+    </div>
+  </div>
+
+  <div id="targetList"></div>
+
   <div class="day-browse" id="dayBrowse">
     <div class="day-browse-head">
       <button id="dayPrev" class="day-arrow">‹</button>
@@ -535,6 +719,17 @@
     <button id="exportBtn">Export log (.json)</button>
     <button id="importBtn">Import log (.json)</button>
     <input type="file" id="importFile" accept="application/json" style="display:none;">
+  </div>
+
+  <div class="period-box">
+    <div class="period-stat">
+      <div class="period-stat-label">This month</div>
+      <div class="period-stat-val" id="statMonthTotal">0h 00m</div>
+    </div>
+    <div class="period-stat">
+      <div class="period-stat-label">This year</div>
+      <div class="period-stat-val" id="statYearTotal">0h 00m</div>
+    </div>
   </div>
 
   <footer>ENTRIES ARE SAVED PRIVATELY IN THIS BROWSER ON THIS DEVICE — USE EXPORT TO BACK UP OR MOVE THEM</footer>
@@ -832,8 +1027,106 @@
     document.getElementById('statDailyAvg').textContent = fmtHuman(dailyAvgSec);
     document.getElementById('statActiveDays').textContent = `${activeDays} / 7`;
 
+    // Month and year totals (calendar month / calendar year, not rolling)
+    const nowD = new Date();
+    const monthTotalSec = entries
+      .filter(e=>{
+        const d = new Date(e.timestamp);
+        return d.getMonth() === nowD.getMonth() && d.getFullYear() === nowD.getFullYear();
+      })
+      .reduce((a,e)=>a+e.seconds,0);
+    const yearTotalSec = entries
+      .filter(e => new Date(e.timestamp).getFullYear() === nowD.getFullYear())
+      .reduce((a,e)=>a+e.seconds,0);
+    document.getElementById('statMonthTotal').textContent = fmtHuman(monthTotalSec);
+    document.getElementById('statYearTotal').textContent = fmtHuman(yearTotalSec);
+
+    renderTargets();
     renderDayBrowse();
   }
+
+  // --- Targets: named work goals, progress auto-calculated from matching entries ---
+  let targets = [];
+
+  async function persistTargets(){
+    try{ localStorage.setItem('worklog:targets', JSON.stringify(targets)); }catch(e){}
+  }
+  async function loadTargets(){
+    try{
+      const raw = localStorage.getItem('worklog:targets');
+      if(raw) targets = JSON.parse(raw);
+    }catch(e){ targets = []; }
+  }
+
+  function secondsForTarget(name){
+    const needle = name.trim().toLowerCase();
+    return entries
+      .filter(e => e.task.toLowerCase().includes(needle))
+      .reduce((a,e)=>a+e.seconds, 0);
+  }
+
+  function renderTargets(){
+    const list = document.getElementById('targetList');
+    if(!list) return;
+    list.innerHTML = '';
+    if(targets.length === 0){
+      list.innerHTML = '<div class="empty">No targets yet — add one to track progress toward a goal.</div>';
+      return;
+    }
+    targets.forEach(t=>{
+      const doneSec = secondsForTarget(t.name);
+      const targetSec = t.hours * 3600;
+      const pct = targetSec > 0 ? Math.min(100, Math.round((doneSec/targetSec)*100)) : 0;
+      const card = document.createElement('div');
+      card.className = 'target-card';
+      card.innerHTML = `
+        <div class="target-card-top">
+          <div class="target-name">${escapeHtml(t.name)}</div>
+          <div class="target-nums">${fmtHuman(doneSec)} / ${t.hours}h</div>
+        </div>
+        <div class="target-bar-track">
+          <div class="target-bar-fill${pct>=100?' done':''}" style="width:${pct}%"></div>
+        </div>
+        <div class="target-bottom-row">
+          <div class="target-pct">${pct}% complete${pct>=100 ? ' · goal reached' : ''}</div>
+          <button class="target-del" data-id="${t.id}" title="Delete target">✕</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+    document.querySelectorAll('.target-del').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        targets = targets.filter(t=>t.id !== btn.dataset.id);
+        await persistTargets();
+        renderTargets();
+      });
+    });
+  }
+
+  const addTargetBtn = document.getElementById('addTargetBtn');
+  const targetForm = document.getElementById('targetForm');
+  const targetName = document.getElementById('targetName');
+  const targetHours = document.getElementById('targetHours');
+  const targetCancelBtn = document.getElementById('targetCancelBtn');
+  const targetSaveBtn = document.getElementById('targetSaveBtn');
+
+  addTargetBtn.addEventListener('click', ()=>{
+    targetName.value = '';
+    targetHours.value = 10;
+    targetForm.classList.add('show');
+    targetName.focus();
+  });
+  targetCancelBtn.addEventListener('click', ()=> targetForm.classList.remove('show'));
+  targetSaveBtn.addEventListener('click', async ()=>{
+    const name = targetName.value.trim();
+    const hours = parseFloat(targetHours.value);
+    if(!name){ alert('Give the target a name.'); return; }
+    if(!hours || hours <= 0){ alert('Enter a target hours value greater than 0.'); return; }
+    targets.push({ id: 't'+Date.now(), name, hours });
+    await persistTargets();
+    renderTargets();
+    targetForm.classList.remove('show');
+  });
 
   // --- Swipeable day browser: offset 0 = today, 1 = yesterday, 2 = two days ago, etc. ---
   let dayOffset = 1; // default view: yesterday
@@ -1072,6 +1365,7 @@
   });
 
   resetDisplay();
+  loadTargets().then(renderTargets);
   loadEntries();
   restoreSession();
 })();
