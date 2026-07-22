@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Ledger — Work Timer</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   @font-face {
     font-family: 'DigitFace';
@@ -599,6 +600,54 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .drive-box{
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    margin-bottom: 22px;
+  }
+  .drive-box-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom: 4px;
+  }
+  .drive-box-head .label{
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+  .drive-status{
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-bottom: 10px;
+  }
+  .drive-status.connected{ color: var(--green); }
+  .drive-row{
+    display:flex;
+    gap: 10px;
+  }
+  .drive-row button{
+    flex:1;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 11px 0;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor:pointer;
+  }
+  .drive-row button:hover{ border-color: var(--brass); color: var(--brass); }
+  .drive-row button:disabled{ opacity:0.35; cursor:not-allowed; }
+  .drive-row button.connect{
+    background: var(--brass);
+    border-color: var(--brass);
+    color: #14130f;
+    font-weight:bold;
+  }
+
   footer{
     margin-top: 22px;
     text-align:center;
@@ -671,12 +720,15 @@
     <div class="label">Add entry manually</div>
     <input type="text" id="manualTask" placeholder="What did you work on?" maxlength="120">
     <div class="manual-grid">
-      <label>Date<input type="date" id="manualDate"></label>
-      <label>Time<input type="time" id="manualTime"></label>
+      <label>Start date<input type="date" id="manualDate"></label>
+      <label>Start time<input type="time" id="manualTime"></label>
     </div>
     <div class="manual-grid">
       <label>Hours<input type="number" id="manualH" min="0" max="23" value="0"></label>
       <label>Minutes<input type="number" id="manualM" min="0" max="59" value="30"></label>
+    </div>
+    <div class="manual-grid">
+      <label>Pauses (optional)<input type="number" id="manualPauses" min="0" value="0"></label>
     </div>
     <div class="row">
       <button id="manualCancelBtn">Cancel</button>
@@ -721,6 +773,16 @@
     <input type="file" id="importFile" accept="application/json" style="display:none;">
   </div>
 
+  <div class="drive-box">
+    <div class="drive-box-head"><div class="label">Google Drive Backup</div></div>
+    <div class="drive-status" id="driveStatus">Not connected</div>
+    <div class="drive-row">
+      <button id="driveConnectBtn" class="connect">Connect Google Drive</button>
+      <button id="driveBackupBtn" disabled>Backup now</button>
+      <button id="driveRestoreBtn" disabled>Restore</button>
+    </div>
+  </div>
+
   <div class="period-box">
     <div class="period-stat">
       <div class="period-stat-label">This month</div>
@@ -737,6 +799,19 @@
 
 <script>
 (function(){
+  // ====== FILL IN YOUR OWN GOOGLE OAUTH CLIENT ID BELOW ======
+  // Get this from Google Cloud Console → APIs & Services → Credentials.
+  // See the setup guide provided alongside this file.
+  const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email';
+  const BACKUP_FILENAME = 'worklog-backup.json';
+  // Only these Gmail addresses are allowed to back up/restore, even if this
+  // app is ever published beyond "Testing" mode. Leave the array empty ([])
+  // to allow any account that can sign in (e.g. while still in Testing mode
+  // with your own test-user list doing the restricting instead).
+  const ALLOWED_EMAILS = []; // e.g. ['you@gmail.com', 'work@gmail.com']
+  // ============================================================
+
   const digits = document.getElementById('digits');
   const displayWrap = document.getElementById('displayWrap');
   const startBtn = document.getElementById('startBtn');
@@ -761,6 +836,8 @@
   let startTimestamp = 0;
   let elapsedBeforePause = 0; // ms, for stopwatch
   let countdownTotalMs = 0;
+  let sessionStartTime = null; // wall-clock time of the first Start press in this session
+  let pauseCount = 0; // number of times Pause was pressed this session
   let interval = null;
   let pendingSeconds = 0; // seconds to log when stopped
   let entries = [];
@@ -843,6 +920,7 @@
     }
     running = true;
     startTimestamp = Date.now();
+    if(sessionStartTime === null) sessionStartTime = startTimestamp; // only set on the very first start
     interval = setInterval(tick, 1000);
     tick();
     digits.classList.add('running');
@@ -861,6 +939,7 @@
     running = false;
     clearInterval(interval);
     elapsedBeforePause += Date.now() - startTimestamp;
+    pauseCount += 1;
     digits.classList.remove('running');
     displayWrap.dataset.status = 'Paused';
     startBtn.disabled = false;
@@ -899,6 +978,8 @@
     elapsedBeforePause = 0;
     pendingSeconds = 0;
     countdownTotalMs = 0;
+    sessionStartTime = null;
+    pauseCount = 0;
     startBtn.disabled = false;
     startBtn.textContent = 'Start';
     pauseBtn.disabled = true;
@@ -916,7 +997,7 @@
   function saveSession(){
     try{
       localStorage.setItem('worklog:session', JSON.stringify({
-        mode, running, startTimestamp, elapsedBeforePause, countdownTotalMs
+        mode, running, startTimestamp, elapsedBeforePause, countdownTotalMs, sessionStartTime, pauseCount
       }));
     }catch(e){}
   }
@@ -933,6 +1014,8 @@
     countdownTotalMs = saved.countdownTotalMs || 0;
     elapsedBeforePause = saved.elapsedBeforePause || 0;
     startTimestamp = saved.startTimestamp;
+    sessionStartTime = saved.sessionStartTime || null;
+    pauseCount = saved.pauseCount || 0;
 
     if(saved.running){
       // Recompute how much time actually passed while the page was closed
@@ -978,7 +1061,9 @@
       task,
       seconds: pendingSeconds,
       mode,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      startTime: sessionStartTime || (Date.now() - pendingSeconds*1000),
+      pauses: pauseCount
     };
     entries.unshift(entry);
     await persist();
@@ -1167,7 +1252,7 @@
         row.innerHTML = `
           <div class="left">
             <div class="task">${escapeHtml(e.task)}</div>
-            <div class="meta">${time} · ${e.mode==='countdown'?'countdown':(e.mode==='manual'?'added manually':'stopwatch')}</div>
+            <div class="meta">${entryMeta(e)}</div>
           </div>
           <div class="dur">${fmtHuman(e.seconds)}</div>
         `;
@@ -1217,7 +1302,7 @@
         row.innerHTML = `
           <div class="left">
             <div class="task">${escapeHtml(e.task)}</div>
-            <div class="meta">${time} · ${e.mode==='countdown'?'countdown':(e.mode==='manual'?'added manually':'stopwatch')}</div>
+            <div class="meta">${entryMeta(e)}</div>
           </div>
           <div class="dur">${fmtHuman(e.seconds)}</div>
           <button class="del" data-id="${e.id}" title="Delete">✕</button>
@@ -1236,6 +1321,23 @@
         renderLog();
       });
     });
+  }
+
+  function entryMeta(e){
+    const endTime = new Date(e.timestamp).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    const kind = e.mode==='countdown' ? 'countdown' : (e.mode==='manual' ? 'added manually' : 'stopwatch');
+    let parts = [];
+    if(e.startTime && e.startTime !== e.timestamp){
+      const startStr = new Date(e.startTime).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+      parts.push(`started ${startStr}`);
+    } else {
+      parts.push(endTime);
+    }
+    parts.push(kind);
+    if(typeof e.pauses === 'number' && e.pauses > 0){
+      parts.push(`${e.pauses} pause${e.pauses===1?'':'s'}`);
+    }
+    return parts.join(' · ');
   }
 
   function escapeHtml(str){
@@ -1315,6 +1417,7 @@
   const manualTime = document.getElementById('manualTime');
   const manualH = document.getElementById('manualH');
   const manualM = document.getElementById('manualM');
+  const manualPauses = document.getElementById('manualPauses');
   const manualCancelBtn = document.getElementById('manualCancelBtn');
   const manualSaveBtn = document.getElementById('manualSaveBtn');
 
@@ -1350,18 +1453,215 @@
 
     const timestamp = new Date(`${manualDate.value}T${manualTime.value}`).getTime();
     if(isNaN(timestamp)){ alert('That date/time looks invalid.'); return; }
+    const pauses = parseInt(manualPauses.value) || 0;
 
     entries.push({
       id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
       task,
       seconds,
       mode: 'manual',
-      timestamp
+      timestamp,
+      startTime: timestamp,
+      pauses
     });
     entries.sort((a,b)=>b.timestamp - a.timestamp);
     await persist();
     renderLog();
     manualEntry.classList.remove('show');
+  });
+
+  // --- Google Drive backup ---
+  const driveConnectBtn = document.getElementById('driveConnectBtn');
+  const driveBackupBtn = document.getElementById('driveBackupBtn');
+  const driveRestoreBtn = document.getElementById('driveRestoreBtn');
+  const driveStatus = document.getElementById('driveStatus');
+
+  let driveAccessToken = null;
+  let tokenClient = null;
+
+  function driveReady(){
+    return typeof google !== 'undefined' && google.accounts && google.accounts.oauth2;
+  }
+
+  function setDriveConnected(connected, msg){
+    driveStatus.textContent = msg || (connected ? 'Connected' : 'Not connected');
+    driveStatus.classList.toggle('connected', !!connected);
+    driveBackupBtn.disabled = !connected;
+    driveRestoreBtn.disabled = !connected;
+    driveConnectBtn.textContent = connected ? 'Reconnect' : 'Connect Google Drive';
+  }
+
+  function initTokenClientIfNeeded(){
+    if(tokenClient || !driveReady()) return;
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: async (resp)=>{
+        if(resp && resp.access_token){
+          driveAccessToken = resp.access_token;
+          setDriveConnected(true, 'Checking account…');
+
+          if(ALLOWED_EMAILS.length > 0){
+            try{
+              const who = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${driveAccessToken}` }
+              }).then(r=>r.json());
+
+              const email = (who.email || '').toLowerCase();
+              const allowed = ALLOWED_EMAILS.map(e=>e.toLowerCase()).includes(email);
+
+              if(!allowed){
+                driveAccessToken = null;
+                setDriveConnected(false, `${email || 'This account'} isn't allowed to back up here`);
+                return;
+              }
+            }catch(e){
+              driveAccessToken = null;
+              setDriveConnected(false, 'Could not verify account — try again');
+              return;
+            }
+          }
+
+          setDriveConnected(true, 'Connected to Google Drive');
+        } else {
+          setDriveConnected(false, 'Connection failed — try again');
+        }
+      }
+    });
+  }
+
+  driveConnectBtn.addEventListener('click', ()=>{
+    if(GOOGLE_CLIENT_ID.indexOf('YOUR_CLIENT_ID') === 0){
+      alert('Google Drive isn\'t set up yet. See the setup guide to add your own Client ID in this file (look for GOOGLE_CLIENT_ID near the top of the script).');
+      return;
+    }
+    if(!driveReady()){
+      alert('Google sign-in script hasn\'t loaded yet — check your connection and try again in a moment.');
+      return;
+    }
+    initTokenClientIfNeeded();
+    tokenClient.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+  });
+
+  async function driveFindBackupFileId(){
+    const q = encodeURIComponent(`name='${BACKUP_FILENAME}' and trashed=false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
+      headers: { Authorization: `Bearer ${driveAccessToken}` }
+    });
+    if(!res.ok) throw new Error('Drive lookup failed: ' + res.status);
+    const data = await res.json();
+    return (data.files && data.files.length > 0) ? data.files[0].id : null;
+  }
+
+  driveBackupBtn.addEventListener('click', async ()=>{
+    if(!driveAccessToken) return;
+    driveBackupBtn.disabled = true;
+    driveBackupBtn.textContent = 'Backing up…';
+    try{
+      const payload = JSON.stringify({
+        exportedAt: new Date().toISOString(),
+        entries,
+        targets
+      }, null, 2);
+
+      const existingId = await driveFindBackupFileId();
+
+      if(existingId){
+        // Update existing file's content
+        const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=media`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${driveAccessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: payload
+        });
+        if(!res.ok) throw new Error('Update failed: ' + res.status);
+      } else {
+        // Create new file via multipart upload
+        const boundary = 'worklog_boundary_' + Date.now();
+        const metadata = { name: BACKUP_FILENAME, mimeType: 'application/json' };
+        const body =
+          `--${boundary}\r\n` +
+          `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+          `${JSON.stringify(metadata)}\r\n` +
+          `--${boundary}\r\n` +
+          `Content-Type: application/json\r\n\r\n` +
+          `${payload}\r\n` +
+          `--${boundary}--`;
+
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${driveAccessToken}`,
+            'Content-Type': `multipart/related; boundary=${boundary}`
+          },
+          body
+        });
+        if(!res.ok) throw new Error('Create failed: ' + res.status);
+      }
+
+      setDriveConnected(true, `Backed up ${new Date().toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`);
+    }catch(err){
+      console.error(err);
+      alert('Backup failed. You may need to reconnect (token can expire after an hour).');
+      setDriveConnected(false, 'Backup failed — try reconnecting');
+    }
+    driveBackupBtn.disabled = false;
+    driveBackupBtn.textContent = 'Backup now';
+  });
+
+  driveRestoreBtn.addEventListener('click', async ()=>{
+    if(!driveAccessToken) return;
+    driveRestoreBtn.disabled = true;
+    driveRestoreBtn.textContent = 'Restoring…';
+    try{
+      const fileId = await driveFindBackupFileId();
+      if(!fileId){
+        alert('No backup file found in Drive yet — tap "Backup now" first.');
+      } else {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: { Authorization: `Bearer ${driveAccessToken}` }
+        });
+        if(!res.ok) throw new Error('Fetch failed: ' + res.status);
+        const data = await res.json();
+
+        const incomingEntries = Array.isArray(data.entries) ? data.entries : [];
+        const existingIds = new Set(entries.map(e=>e.id));
+        let added = 0;
+        incomingEntries.forEach(inc=>{
+          if(!inc || typeof inc.seconds !== 'number' || !inc.timestamp) return;
+          const id = inc.id || ('drv'+inc.timestamp+Math.random().toString(36).slice(2,7));
+          if(existingIds.has(id)) return;
+          entries.push({ ...inc, id });
+          existingIds.add(id);
+          added++;
+        });
+        entries.sort((a,b)=>b.timestamp - a.timestamp);
+
+        if(Array.isArray(data.targets)){
+          const existingTargetIds = new Set(targets.map(t=>t.id));
+          data.targets.forEach(t=>{
+            if(t && t.id && !existingTargetIds.has(t.id)){
+              targets.push(t);
+              existingTargetIds.add(t.id);
+            }
+          });
+          await persistTargets();
+          renderTargets();
+        }
+
+        await persist();
+        renderLog();
+        alert(added > 0 ? `Restored ${added} new entr${added===1?'y':'ies'} from Drive.` : 'Already up to date — no new entries found.');
+      }
+    }catch(err){
+      console.error(err);
+      alert('Restore failed. You may need to reconnect (token can expire after an hour).');
+      setDriveConnected(false, 'Restore failed — try reconnecting');
+    }
+    driveRestoreBtn.disabled = false;
+    driveRestoreBtn.textContent = 'Restore';
   });
 
   resetDisplay();
