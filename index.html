@@ -1497,7 +1497,9 @@
   exportBtn.addEventListener('click', ()=>{
     const payload = {
       exportedAt: new Date().toISOString(),
-      entries: entries
+      entries: entries,
+      targets: targets,
+      completedTargets: completedTargets
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
@@ -1523,27 +1525,55 @@
         const incoming = Array.isArray(data) ? data : (data.entries || []);
         if(!Array.isArray(incoming)) throw new Error('bad format');
 
-        // Merge: keep existing, add incoming ones not already present (by id, fallback to task+timestamp match)
+        // Merge entries: keep existing, add incoming ones not already present
         const existingIds = new Set(entries.map(e=>e.id));
         let added = 0;
         incoming.forEach(inc=>{
           if(!inc || typeof inc.seconds !== 'number' || !inc.timestamp) return;
           const id = inc.id || ('imp' + inc.timestamp + Math.random().toString(36).slice(2,7));
           if(existingIds.has(id)) return;
-          entries.push({
-            id,
-            task: inc.task || 'Untitled session',
-            seconds: inc.seconds,
-            mode: inc.mode || 'stopwatch',
-            timestamp: inc.timestamp
-          });
+          entries.push({ ...inc, id });
           existingIds.add(id);
           added++;
         });
         entries.sort((a,b)=>b.timestamp - a.timestamp);
+
+        // Merge active targets
+        let addedTargets = 0;
+        if(Array.isArray(data.targets)){
+          const existingTargetIds = new Set(targets.map(t=>t.id));
+          data.targets.forEach(t=>{
+            if(t && t.id && !existingTargetIds.has(t.id)){
+              targets.push(t);
+              existingTargetIds.add(t.id);
+              addedTargets++;
+            }
+          });
+        }
+
+        // Merge completed targets
+        let addedCompleted = 0;
+        if(Array.isArray(data.completedTargets)){
+          const existingCompletedIds = new Set(completedTargets.map(t=>t.id));
+          data.completedTargets.forEach(t=>{
+            if(t && t.id && !existingCompletedIds.has(t.id)){
+              completedTargets.push(t);
+              existingCompletedIds.add(t.id);
+              addedCompleted++;
+            }
+          });
+        }
+
         await persist();
+        await persistTargets();
+        await persistCompletedTargets();
         renderLog();
-        alert(added > 0 ? `Imported ${added} new entr${added===1?'y':'ies'}.` : 'No new entries found (already up to date).');
+
+        const parts = [];
+        if(added>0) parts.push(`${added} entr${added===1?'y':'ies'}`);
+        if(addedTargets>0) parts.push(`${addedTargets} target${addedTargets===1?'':'s'}`);
+        if(addedCompleted>0) parts.push(`${addedCompleted} completed target${addedCompleted===1?'':'s'}`);
+        alert(parts.length > 0 ? `Imported ${parts.join(', ')}.` : 'Nothing new to import — already up to date.');
       }catch(err){
         alert('Could not read that file — make sure it\'s a log exported from this app.');
       }
@@ -1704,7 +1734,8 @@
       const payload = JSON.stringify({
         exportedAt: new Date().toISOString(),
         entries,
-        targets
+        targets,
+        completedTargets
       }, null, 2);
 
       const existingId = await driveFindBackupFileId();
@@ -1791,11 +1822,21 @@
             }
           });
           await persistTargets();
-          renderTargets();
+        }
+
+        if(Array.isArray(data.completedTargets)){
+          const existingCompletedIds = new Set(completedTargets.map(t=>t.id));
+          data.completedTargets.forEach(t=>{
+            if(t && t.id && !existingCompletedIds.has(t.id)){
+              completedTargets.push(t);
+              existingCompletedIds.add(t.id);
+            }
+          });
+          await persistCompletedTargets();
         }
 
         await persist();
-        renderLog();
+        renderLog(); // triggers renderStats → renderTargets → renderCompletedTargets
         alert(added > 0 ? `Restored ${added} new entr${added===1?'y':'ies'} from Drive.` : 'Already up to date — no new entries found.');
       }
     }catch(err){
