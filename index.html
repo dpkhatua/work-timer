@@ -788,10 +788,11 @@
   <div id="targetList"></div>
 
   <div class="section-head" id="completedTargetsHead" style="display:none;">
-    <h2>Completed Targets</h2>
+    <h2 id="completedTargetsTitle">Completed Targets</h2>
+    <button id="completedTargetsToggle" class="add-target-btn">▸ Show</button>
   </div>
 
-  <div id="completedTargetList"></div>
+  <div id="completedTargetList" style="display:none;"></div>
 
   <div class="day-browse" id="dayBrowse">
     <div class="day-browse-head">
@@ -1203,10 +1204,11 @@
     }catch(e){ completedTargets = []; }
   }
 
-  function secondsForTarget(name){
+  function secondsForTarget(name, sinceTs){
     const needle = name.trim().toLowerCase();
+    const cutoff = sinceTs || 0;
     return entries
-      .filter(e => e.task.toLowerCase().includes(needle))
+      .filter(e => e.task.toLowerCase().includes(needle) && e.timestamp >= cutoff)
       .reduce((a,e)=>a+e.seconds, 0);
   }
 
@@ -1218,7 +1220,7 @@
     const stillActive = [];
     let movedAny = false;
     targets.forEach(t=>{
-      const doneSec = secondsForTarget(t.name);
+      const doneSec = secondsForTarget(t.name, t.createdAt);
       const targetSec = t.hours * 3600;
       if(targetSec > 0 && doneSec >= targetSec){
         completedTargets.unshift({
@@ -1244,7 +1246,7 @@
       list.innerHTML = '<div class="empty">No active targets — add one to track progress toward a goal.</div>';
     } else {
       targets.forEach(t=>{
-        const doneSec = secondsForTarget(t.name);
+        const doneSec = secondsForTarget(t.name, t.createdAt);
         const targetSec = t.hours * 3600;
         const pct = targetSec > 0 ? Math.min(100, Math.round((doneSec/targetSec)*100)) : 0;
         const card = document.createElement('div');
@@ -1276,17 +1278,28 @@
     renderCompletedTargets();
   }
 
+  let completedTargetsExpanded = false;
+
   function renderCompletedTargets(){
     const head = document.getElementById('completedTargetsHead');
     const list = document.getElementById('completedTargetList');
+    const title = document.getElementById('completedTargetsTitle');
+    const toggle = document.getElementById('completedTargetsToggle');
     if(!head || !list) return;
 
     if(completedTargets.length === 0){
       head.style.display = 'none';
+      list.style.display = 'none';
       list.innerHTML = '';
       return;
     }
     head.style.display = 'flex';
+    title.textContent = `Completed Targets (${completedTargets.length})`;
+    toggle.textContent = completedTargetsExpanded ? '▾ Hide' : '▸ Show';
+    list.style.display = completedTargetsExpanded ? 'block' : 'none';
+
+    if(!completedTargetsExpanded) return;
+
     list.innerHTML = '';
     completedTargets.forEach(t=>{
       const dateStr = new Date(t.completedAt).toLocaleDateString(undefined,{month:'short', day:'numeric', year:'numeric'});
@@ -1313,6 +1326,11 @@
     });
   }
 
+  document.getElementById('completedTargetsToggle').addEventListener('click', ()=>{
+    completedTargetsExpanded = !completedTargetsExpanded;
+    renderCompletedTargets();
+  });
+
   const addTargetBtn = document.getElementById('addTargetBtn');
   const targetForm = document.getElementById('targetForm');
   const targetName = document.getElementById('targetName');
@@ -1332,7 +1350,7 @@
     const hours = parseFloat(targetHours.value);
     if(!name){ alert('Give the target a name.'); return; }
     if(!hours || hours <= 0){ alert('Enter a target hours value greater than 0.'); return; }
-    targets.push({ id: 't'+Date.now(), name, hours });
+    targets.push({ id: 't'+Date.now(), name, hours, createdAt: Date.now() });
     await persistTargets();
     renderTargets();
     targetForm.classList.remove('show');
