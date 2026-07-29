@@ -524,6 +524,54 @@
     font-weight:bold;
   }
 
+  .countdown-card{
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 12px;
+  }
+  .countdown-card.today{ border-left: 3px solid var(--brass); }
+  .countdown-card.passed{ opacity: 0.6; border-left: 3px solid var(--red); }
+  .countdown-left{ min-width:0; }
+  .countdown-name{
+    font-size: 14px;
+    color: var(--ink);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .countdown-date{
+    font-size: 10px;
+    color: var(--ink-dim);
+    margin-top: 4px;
+    letter-spacing: 0.05em;
+  }
+  .countdown-right{
+    display:flex;
+    align-items:baseline;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .countdown-days{
+    font-size: 22px;
+    color: var(--brass);
+    font-variant-numeric: tabular-nums;
+    white-space:nowrap;
+    text-align:right;
+  }
+  .countdown-days .unit{
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-left: 4px;
+  }
+  .countdown-card.today .countdown-days{ color: var(--brass); }
+  .countdown-card.passed .countdown-days{ color: var(--red); }
+
   .completed-card{
     border: 1px solid var(--line);
     border-left: 3px solid var(--green);
@@ -793,6 +841,24 @@
   </div>
 
   <div id="completedTargetList" style="display:none;"></div>
+
+  <div class="section-head">
+    <h2>Countdowns</h2>
+    <button id="addCountdownBtn" class="add-target-btn">+ New countdown</button>
+  </div>
+
+  <div class="target-form" id="countdownForm">
+    <input type="text" id="countdownCause" placeholder="What's happening? (e.g. Project deadline)" maxlength="80">
+    <div class="manual-grid">
+      <label>Final date<input type="date" id="countdownDate"></label>
+    </div>
+    <div class="row">
+      <button id="countdownCancelBtn">Cancel</button>
+      <button id="countdownSaveBtn" class="save">Add countdown</button>
+    </div>
+  </div>
+
+  <div id="countdownList"></div>
 
   <div class="day-browse" id="dayBrowse">
     <div class="day-browse-head">
@@ -1331,6 +1397,106 @@
     renderCompletedTargets();
   });
 
+  // --- Countdowns to a specific date (day 0 = the final date itself) ---
+  let deadlines = [];
+
+  async function persistDeadlines(){
+    try{ localStorage.setItem('worklog:deadlines', JSON.stringify(deadlines)); }catch(e){}
+  }
+  async function loadDeadlines(){
+    try{
+      const raw = localStorage.getItem('worklog:deadlines');
+      if(raw) deadlines = JSON.parse(raw);
+    }catch(e){ deadlines = []; }
+  }
+
+  function daysUntil(dateStr){
+    // dateStr is 'YYYY-MM-DD'; compare calendar dates only, ignoring time of day
+    const [y,m,d] = dateStr.split('-').map(Number);
+    const target = new Date(y, m-1, d);
+    const today = new Date();
+    const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return Math.round((target - todayMid) / 86400000);
+  }
+
+  function renderDeadlines(){
+    const list = document.getElementById('countdownList');
+    if(!list) return;
+    list.innerHTML = '';
+
+    if(deadlines.length === 0){
+      list.innerHTML = '<div class="empty">No countdowns yet — add one to track days remaining.</div>';
+      return;
+    }
+
+    const sorted = [...deadlines].sort((a,b)=> daysUntil(a.date) - daysUntil(b.date));
+
+    sorted.forEach(dl=>{
+      const days = daysUntil(dl.date);
+      const dateObj = new Date(dl.date + 'T00:00:00');
+      const dateLabel = dateObj.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+
+      let stateClass = '';
+      let daysHtml;
+      if(days > 0){
+        daysHtml = `${days}<span class="unit">day${days===1?'':'s'} left</span>`;
+      } else if(days === 0){
+        stateClass = 'today';
+        daysHtml = `0<span class="unit">today</span>`;
+      } else {
+        stateClass = 'passed';
+        daysHtml = `${Math.abs(days)}<span class="unit">day${Math.abs(days)===1?'':'s'} ago</span>`;
+      }
+
+      const card = document.createElement('div');
+      card.className = `countdown-card ${stateClass}`;
+      card.innerHTML = `
+        <div class="countdown-left">
+          <div class="countdown-name">${escapeHtml(dl.name)}</div>
+          <div class="countdown-date">${dateLabel}</div>
+        </div>
+        <div class="countdown-right">
+          <div class="countdown-days">${daysHtml}</div>
+          <button class="target-del" data-id="${dl.id}" title="Delete countdown">✕</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+
+    list.querySelectorAll('.target-del').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        deadlines = deadlines.filter(d=>d.id !== btn.dataset.id);
+        await persistDeadlines();
+        renderDeadlines();
+      });
+    });
+  }
+
+  const addCountdownBtn = document.getElementById('addCountdownBtn');
+  const countdownForm = document.getElementById('countdownForm');
+  const countdownCause = document.getElementById('countdownCause');
+  const countdownDate = document.getElementById('countdownDate');
+  const countdownCancelBtn = document.getElementById('countdownCancelBtn');
+  const countdownSaveBtn = document.getElementById('countdownSaveBtn');
+
+  addCountdownBtn.addEventListener('click', ()=>{
+    countdownCause.value = '';
+    const today = new Date();
+    countdownDate.value = fmtDateInput(today);
+    countdownForm.classList.add('show');
+    countdownCause.focus();
+  });
+  countdownCancelBtn.addEventListener('click', ()=> countdownForm.classList.remove('show'));
+  countdownSaveBtn.addEventListener('click', async ()=>{
+    const name = countdownCause.value.trim();
+    if(!name){ alert('Give this countdown a name.'); return; }
+    if(!countdownDate.value){ alert('Pick a final date.'); return; }
+    deadlines.push({ id: 'd'+Date.now(), name, date: countdownDate.value });
+    await persistDeadlines();
+    renderDeadlines();
+    countdownForm.classList.remove('show');
+  });
+
   const addTargetBtn = document.getElementById('addTargetBtn');
   const targetForm = document.getElementById('targetForm');
   const targetName = document.getElementById('targetName');
@@ -1499,8 +1665,8 @@
       exportedAt: new Date().toISOString(),
       entries: entries,
       targets: targets,
-      completedTargets: completedTargets
-    };
+      completedTargets: completedTargets,
+      deadlines: deadlines    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1564,15 +1730,31 @@
           });
         }
 
+        // Merge countdowns/deadlines
+        let addedDeadlines = 0;
+        if(Array.isArray(data.deadlines)){
+          const existingDeadlineIds = new Set(deadlines.map(d=>d.id));
+          data.deadlines.forEach(d=>{
+            if(d && d.id && !existingDeadlineIds.has(d.id)){
+              deadlines.push(d);
+              existingDeadlineIds.add(d.id);
+              addedDeadlines++;
+            }
+          });
+        }
+
         await persist();
         await persistTargets();
         await persistCompletedTargets();
+        await persistDeadlines();
         renderLog();
+        renderDeadlines();
 
         const parts = [];
         if(added>0) parts.push(`${added} entr${added===1?'y':'ies'}`);
         if(addedTargets>0) parts.push(`${addedTargets} target${addedTargets===1?'':'s'}`);
         if(addedCompleted>0) parts.push(`${addedCompleted} completed target${addedCompleted===1?'':'s'}`);
+        if(addedDeadlines>0) parts.push(`${addedDeadlines} countdown${addedDeadlines===1?'':'s'}`);
         alert(parts.length > 0 ? `Imported ${parts.join(', ')}.` : 'Nothing new to import — already up to date.');
       }catch(err){
         alert('Could not read that file — make sure it\'s a log exported from this app.');
@@ -1735,7 +1917,8 @@
         exportedAt: new Date().toISOString(),
         entries,
         targets,
-        completedTargets
+        completedTargets,
+        deadlines
       }, null, 2);
 
       const existingId = await driveFindBackupFileId();
@@ -1835,6 +2018,18 @@
           await persistCompletedTargets();
         }
 
+        if(Array.isArray(data.deadlines)){
+          const existingDeadlineIds = new Set(deadlines.map(d=>d.id));
+          data.deadlines.forEach(d=>{
+            if(d && d.id && !existingDeadlineIds.has(d.id)){
+              deadlines.push(d);
+              existingDeadlineIds.add(d.id);
+            }
+          });
+          await persistDeadlines();
+          renderDeadlines();
+        }
+
         await persist();
         renderLog(); // triggers renderStats → renderTargets → renderCompletedTargets
         alert(added > 0 ? `Restored ${added} new entr${added===1?'y':'ies'} from Drive.` : 'Already up to date — no new entries found.');
@@ -1850,6 +2045,7 @@
 
   resetDisplay();
   Promise.all([loadTargets(), loadCompletedTargets()]).then(renderTargets);
+  loadDeadlines().then(renderDeadlines);
   loadEntries();
   restoreSession();
 })();
